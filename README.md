@@ -6,5 +6,7 @@ v0.1-alpha release DOI: 10.5281/zenodo.18259019
 
 Python code to scrape IANSEO for BUCS data prepared by Lucas
 
+Python code to scrape IANSEO for Indoor Nationals data prepared by Joel  
+
 R code to compile BUCS data and generate box-plots prepared by Joel (saved in "data_compiler" folder)
 
