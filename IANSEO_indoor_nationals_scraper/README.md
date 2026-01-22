@@ -1,6 +1,8 @@
 The scraper requires BeautifulSoup package (available at https://www.crummy.com/software/BeautifulSoup/).  
 The scraper also requires the "ianseo_urls.xlsx" workbook.  
 
+The scraper is fairly insensitive to differences in file name formatting, as it uses position in the web page to identify files, not specific file names.  
+
 The scraper takes an excel sheet of urls, downloads the page as a .php, then scans for urls for data.  
 Data is downloaded as a .php, then parsed into a panda dataframe.
 Formatting errors are corrected differently for years before and after 2020, then saved as an excel workbook.  
