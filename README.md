@@ -8,5 +8,5 @@ Python code to scrape IANSEO for BUCS data prepared by Lucas
 
 Python code to scrape IANSEO for Indoor Nationals data prepared by Joel  
 
-R code to compile BUCS data and generate box-plots prepared by Joel (saved in "data_compiler" folder)
+R code to compile BUCS and indoor nationals data, and generate box-plots prepared by Joel (saved in "data_compiler" folder)
 
