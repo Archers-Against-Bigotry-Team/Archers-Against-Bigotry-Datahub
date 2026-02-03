@@ -35,6 +35,8 @@ Modification history:
         Improved overall efficiency.
     01-02-2026:
         Changed parse_html_to_excel() to record competition name and year as columns in each sheet
+    03-02-2026:
+        Improved handling of broken urls
 """
 
 
@@ -111,6 +113,9 @@ def find_data_urls(filepath):
 
     #Filter for links which contain ".php" as only these link to the data
     filtered_links = [item for item in links if php_pattern.search(item)]
+
+    #Filter out broken urls which contain whitespace
+    filtered_links = [s for s in filtered_links if not any(c.isspace() for c in s)]
 
     return filtered_links
 
