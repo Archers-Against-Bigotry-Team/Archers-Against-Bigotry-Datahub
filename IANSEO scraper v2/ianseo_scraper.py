@@ -4,7 +4,7 @@ Filename: ianseo_scraper.py
 Author: Joel Harris joelharris251@gmail.com
 Date: 22-01-2026
 Version: 2.0
-Dependencies: bs4, re, requests, os, pandas, shutil, sys
+Dependencies: bs4, re, requests, os, pandas, shutil, sys, pathlib
 Python version: 3.11.9
 License: GNU GENERAL PUBLIC LICENSE v.3
 
@@ -37,6 +37,8 @@ Modification history:
         Changed parse_html_to_excel() to record competition name and year as columns in each sheet
     03-02-2026:
         Improved handling of broken urls
+    24-03-2026:
+        Improved speed
 """
 
 
@@ -47,6 +49,7 @@ import os
 import pandas as pd
 import shutil
 import sys
+from pathlib import Path
 
 
 #Compile regexes needed for multiple functions for greater efficiency
@@ -54,10 +57,12 @@ year_pattern = re.compile(r"/(\d{4})/")
 name_pattern = re.compile(r"/([^/]+)\.[^/]+$")
 php_pattern = re.compile(r"\.php")
 
+session = requests.Session()
+
 
 def DL_php(phpURL, savePath):
     """
-    Download .php file from ianseo web url (taken from Lucas Low, ll6115@ic.ac.uk)
+    Download .php file from ianseo web url
 
     Parameters
     ----------
@@ -72,12 +77,50 @@ def DL_php(phpURL, savePath):
     None
     """
 
-    r = requests.get(phpURL)
+    r = session.get(phpURL)
     with open(savePath, "wb") as f:
         f.write(r.content)
     f.close()
     
     return 
+
+def get_competition_name(filepath):
+    """
+    Pulls the competition name from a downloaded Ianseo webpage.
+
+    Parameters
+    ----------
+    filepath : str
+        Filepath to the downloaded competition Ianseo webpage.
+
+    Returns
+    -------
+    competition_name : string
+        Name of competition.
+    """
+
+    #Open file and store as document
+    file = open(filepath, "r")
+    document = file.read()
+    file.close()
+
+    #Parse document with bs4 to make navigation easier
+    document = BeautifulSoup(document, 'html.parser')
+
+    #It's Ianseo so of course the competition name is saved in 2 different ways
+    center = document.select_one(".results-header-center")
+    if center is not None:
+        raw_name = center.find("div").get_text(strip=True)
+    else:
+        header = document.find("table", id="TourHeader")
+        th = header.find("th") if header else None
+        raw_name = th.get_text(separator="\n", strip=True).split("\n")[0]
+
+    competition_name = raw_name.replace(" ", "_")
+
+    return competition_name
+
+
 
 
 def find_data_urls(filepath): 
@@ -92,7 +135,7 @@ def find_data_urls(filepath):
     Returns
     -------
     filtered_links : list
-        List of urls to data for a fiven Ianseo webpage.
+        List of urls to data for a given Ianseo webpage.
     """
     global php_pattern
 
@@ -120,7 +163,7 @@ def find_data_urls(filepath):
     return filtered_links
 
 
-def DL_data(file_path, competition):
+def DL_data(file_path, competition_name):
     """
     Downloads competition data from a downloaded Ianseo webpage and saves as .php files in the "raw_data" directory.
     Calls find_data_urls() function.
@@ -129,6 +172,9 @@ def DL_data(file_path, competition):
     ----------
     file_path : str
         Filepath to the downloaded competition Ianseo webpage.
+    
+    competition_name : str
+        Name of competition
 
     Returns
     -------
@@ -143,28 +189,32 @@ def DL_data(file_path, competition):
     year = re.search(year_pattern, urls[0]).group(1) #Determine year of competition from the first url
     
     #Create a subdirectory in "raw_data" for the year of that competition.
-    directory_name = "".join(("raw_data/", year))
+    directory_name = Path("raw_data") / f"{competition_name}_{year}"
     os.makedirs(directory_name, exist_ok=True)
     
     #Convert urls from list into a valid format, find category of competition from url, and download as a .php file
     #Filename formatted as "competetionName_year_competitionCateogry.php"
     for url in urls:
-        url = "".join(("https://www.ianseo.net", url))
+        url = f"https://www.ianseo.net{url}"
         name = re.search(name_pattern, url).group(1)
-        save_path = "".join((directory_name, "/", competition, "_", year, "_", name, ".php"))
+        save_path = directory_name / f"{name}.php"
         DL_php(url, save_path)
     
-    return 
+    return
 
 
-def Parse_html_to_excel(filepath):
+def Parse_html_to_excel(filepath, competition_name):
     """
     Parses ianseo competition data into a pandas dataframe, then saves it as an excel sheet in the "excel_data" directory.
+    Only for separately saved data. For combined data frame, look at Parse_big_html_to_excel().
 
     Parameters
     ----------
     file_path : str
         Filepath to the downloaded competition data .php file.
+
+    competition_name : str
+        Name of competition
 
     Returns
     -------
@@ -178,15 +228,14 @@ def Parse_html_to_excel(filepath):
     #Identify year and name of competition
     year = re.search(year_pattern, filepath).group(1)
     name = re.search(name_pattern, filepath).group(1)
-    save_path = "".join(("excel_data/", year, "/", name, ".xlsx")) #Ensure result saved in "excel_data" directory
+
+    save_dir = Path("excel_data") / f"{competition_name}_{year}"
+    os.mkdir(save_dir, exist_ok = True)
+    save_path = save_dir / f"{name}.xlsx"
 
     #Open .php data file and store as "document"
     with open(filepath, "r", encoding="utf-8") as file:
         document = file.read()
-    
-    #Create subdirectory for competition year in "excel_data" directory
-    directory_name = "".join(("excel_data/", year))
-    os.makedirs(directory_name, exist_ok=True)
     
     #Use bs4 to parse html to make navigating the document easier
     soup = BeautifulSoup(document, "html.parser")
@@ -290,15 +339,7 @@ def Parse_html_to_excel(filepath):
         df.iloc[:, data_start_idx + 2] = [t[0] if len(t) > 0 else "" for t in temp]
         df.insert(data_start_idx + 3,"X.2",[t[1] if len(t) > 1 else "" for t in temp])
     
-    #Extract competition name and year to save as columns
-    #It's Ianseo so of course the competition name is saved in 2 different ways
-    center = soup.select_one(".results-header-center")
-    if center is not None:
-        competition_name = center.find("div").get_text(strip=True)
-    else:
-        header = soup.find("table", id="TourHeader")
-        th = header.find("th") if header else None
-        competition_name = th.get_text(separator="\n", strip=True).split("\n")[0]
+    #Save competition name and year to columns
 
     df.insert(0, "Competition", competition_name)
     df.insert(0, "Year", year)
@@ -310,7 +351,7 @@ def Parse_html_to_excel(filepath):
     return
 
 
-def DL_competition(competition_name, url_filepath):
+def DL_competition(competition_name, url):
     """
     Brings everything together. Creates a multisheet excel workbook of competition data for each url in an excel workbook.
     Calls DL_php(), DL_data(), and Parse_html_to_excel() functions
@@ -328,9 +369,6 @@ def DL_competition(competition_name, url_filepath):
     None
     """
 
-    #Extract list of urls from excel file
-    urls = pd.read_excel(url_filepath, header=None)
-    urls = urls.iloc[:, 0]
 
     #Create directories for "ianseo_pages", "raw_data", "excel_data", and subdirectory "[competition_name]_data" in "results" directory
     directory_name = "ianseo_pages"
@@ -347,14 +385,11 @@ def DL_competition(competition_name, url_filepath):
 
     #Download each Ianseo page and associated competition data for each url
     #Names each Ianseo page file using a counter instead of by year because year cannot be determined until the file has been parsed
-    counter = 1
-    for url in urls:
-        path = ("ianseo_pages\\page", str(counter), ".php")
-        save_path = "".join(path)
-        DL_php(url, save_path)
-        DL_data(save_path, competition_name)
-        counter += 1
 
+    page_path = Path("ianseo_pages") / f"{competition_name}.php"
+    DL_php(url, page_path)
+    DL_data(page_path, competition_name)
+    
     #Cleans up any misformatted filepaths
     for root, dirs, files in os.walk("raw_data"):
         for file in files:
@@ -397,33 +432,27 @@ def main():
     -------
     None
     """
+    urls_file = pd.read_excel("urls.xlsx")
+    urls = urls_file.iloc[:, 0].tolist()
+    total_comps = len(urls)
 
-    #Produce list of excel sheet filenames in "urls" directory
-    with os.scandir("urls") as entries:
-        files = [entry.name for entry in entries if entry.is_file()]
-        total_files = len(files) #Used for progress tracker later
+    #Initialise progress tracker
+    print("Working on: ")
+    print(f"0 of {total_comps} competitions complete")
 
-        #Initialise progress tracker
-        print("Working on: ")
-        print(f"0 of {total_files} files complete")
+    for i, url in enumerate(urls, start= 1):
+        competition_name = get_competition_name(url)
 
-        #Download and process data for each url
-        for i, file in enumerate(files, start= 1):
+        sys.stdout.write("\033[2F")
+        sys.stdout.write(f"\rWorking on: {competition_name}\033[K\n")
 
-            #Report file being processed
-            sys.stdout.write("\033[2F")
-            sys.stdout.write(f"\rWorking on: {file}\033[K\n")
+        DL_competition(competition_name, url)
 
-            #Process file
-            competition_name = file.removesuffix("_urls.xlsx")
-            filepath = f"urls/{file}"
-            DL_competition(competition_name, filepath)
-
-            #Report proportion of files processed 
-            sys.stdout.write(f"\r{i} of {total_files} files complete\033[K\n")
-            sys.stdout.flush()
-
+        sys.stdout.write(f"\r{i} of {total_comps} competitions complete\033[K\n")
+        sys.stdout.flush()
+    
     print("\nComplete") #Report when program is complete.
+
 
     return
 
